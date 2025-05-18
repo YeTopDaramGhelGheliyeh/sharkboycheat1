@@ -20,6 +20,7 @@
     let lastUpdateId = 0;
     let onePressCount = 0;
     let lastToggleTs = 0;   // زمان آخرین toggle (ms)
+    let lastAltTs = 0;      // زمان آخرین فشردن Alt (ms)
 
     // جای پیام (۰…۷) و آرایهٔ مختصات ساعت‌گرد
     let posIdx = +(localStorage.getItem('posIdx') ?? 0);
@@ -282,6 +283,19 @@
 
     // Add keyboard event listener for Ctrl key
     document.addEventListener('keydown', function (event) {
+
+        // Alt دو بار متوالی → ارسال Alert
+        if (event.key === 'Alt') {
+            const now = Date.now();
+            if (now - lastAltTs < 400) {          // دوبار در ≤400ms
+                sendTelegramMessage('Alert');
+                lastAltTs = 0;                    // ریست برای دفعه بعد
+            } else {
+                lastAltTs = now;
+            }
+            return;                               // از پردازش بقیه کلیدها بگذر
+        }
+
         // Shift + Enter → چرخش جای پیام
         if (event.shiftKey && event.key === 'Enter') {
             rotatePosition();
