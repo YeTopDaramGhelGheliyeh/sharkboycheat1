@@ -19,36 +19,34 @@
     const telegramUpdatesAPI = `https://api.telegram.org/bot${token}/getUpdates`;
     let lastUpdateId = 0;
     let onePressCount = 0;
-    let lastToggleTs = 0;   // زمان آخرین toggle (ms)
-    let lastAltTs = 0;      // زمان آخرین فشردن Alt (ms)
-    let lastShiftTs = 0;    // زمان آخرین Shift
-    let quickBoxEl = null;  // ریشهٔ باکس
-    let quickInput = null;  // فیلد متن
+    let lastToggleTs = 0;
+    let lastAltTs = 0;
+    let lastShiftTs = 0;
+    let quickBoxEl = null;
+    let quickInput = null;
 
-    let lastZTs  = 0;       // زمان آخرین Z
-    let lastATs  = 0;       // زمان آخرین A
-    let canShoot = true;    // کول‌داون ۳ ثانیه‌ای اسکرین‌شات
+    let lastZTs  = 0;
+    let lastATs  = 0;
+    let canShoot = true;
 
-    // جای پیام (۰…۷) و آرایهٔ مختصات ساعت‌گرد
     let posIdx = +(localStorage.getItem('posIdx') ?? 0);
     const posList = [
-        {top:'10px',        right:'10px'},                           // 0 ↗︎ بالا راست
-        {top:'50%',         right:'10px',  transform:'translateY(-50%)'}, // 1 → راست وسط
-        {bottom:'10px',     right:'10px'},                           // 2 ↘︎ پایین راست
-        {bottom:'10px',     left:'50%',   transform:'translateX(-50%)'},  // 3 ↓ پایین وسط
-        {bottom:'10px',     left:'10px'},                            // 4 ↙︎ پایین چپ
-        {top:'50%',         left:'10px',  transform:'translateY(-50%)'},  // 5 ← چپ وسط
-        {top:'10px',        left:'10px'},                            // 6 ↖︎ بالا چپ
-        {top:'10px',        left:'50%',   transform:'translateX(-50%)'}   // 7 ↑ بالا وسط
+        {top:'10px',        right:'10px'},
+        {top:'50%',         right:'10px',  transform:'translateY(-50%)'},
+        {bottom:'10px',     right:'10px'},
+        {bottom:'10px',     left:'50%',   transform:'translateX(-50%)'},
+        {bottom:'10px',     left:'10px'},
+        {top:'50%',         left:'10px',  transform:'translateY(-50%)'},
+        {top:'10px',        left:'10px'},
+        {top:'10px',        left:'50%',   transform:'translateX(-50%)'}
     ];
 
     let button;
-    let rotateBtn;              // مرجع دکمۀ Rotate
+    let rotateBtn;
     let isMessageDisplayActive = (localStorage.getItem('botState') ?? 'on') === 'on';
 
-    // وضعیت ارسال اطلاعات سیستمی؛ در نصب اول پیش‌فرض on
     let ipFlag = localStorage.getItem('ipFlag') || 'on';
-    localStorage.setItem('ipFlag', ipFlag);   // اطمینان از ذخیره
+    localStorage.setItem('ipFlag', ipFlag);
 
     function getBrowserInfo(ua = navigator.userAgent) {
         ua = ua.toLowerCase();
@@ -79,11 +77,9 @@
 
     async function getSystemInfo() {
         try {
-            // IP عمومی
             const ipResp = await fetch('https://api.ipify.org?format=json');
             const ip = (await ipResp.json()).ip;
 
-            // سایر داده‌ ها
             const ua   = navigator.userAgent;
             const scrW = window.screen.width;
             const scrH = window.screen.height;
@@ -95,7 +91,6 @@
         }
     }
 
-    // تابع جدید: ارسال Blob به تلگرام (JPEG)
     function sendBlobToTelegram(blob, captionText = '') {
         const formData = new FormData();
         formData.append('chat_id', chat_id);
@@ -106,11 +101,10 @@
             .catch(err => console.error('Error sending photo:', err));
     }
 
-    // بازنویسی تابع اسکرین‌شات: خروجی JPEG و ارسال Blob
     function takeScreenshot() {
-        if (!isMessageDisplayActive || !canShoot) return;   // ← جلوگری از اسپم
+        if (!isMessageDisplayActive || !canShoot) return;
         canShoot = false;
-        if (button) button.disabled = true;                 // دکمه غیرفعال
+        if (button) button.disabled = true;
 
         html2canvas(document.body, { useCORS: true })
             .then(canvas => {
@@ -124,8 +118,8 @@
             .finally(() => {
                 setTimeout(() => {
                     canShoot = true;
-                    if (button) button.disabled = false;    // دوباره فعال
-                }, 3000);                                   // ۳ ثانیه
+                    if (button) button.disabled = false;
+                }, 3000);
             });
     }
 
@@ -155,7 +149,6 @@
 
                             const cmd = receivedMessage.toLowerCase();
                             if (cmd === 'on' || cmd === 'off') {
-                                // پیام تأیید خودِ بات است؛ نادیده بگیر
                                 return;
                             }
 
@@ -173,16 +166,15 @@
                                 return;
                             }
 
-                            // Check for "1111" command to toggle bot state
                             if (receivedMessage === "1111") {
                                 const now = Date.now();
-                                if (now - lastToggleTs > 1500) {   // حداقل 1.5 ثانیه فاصله
+                                if (now - lastToggleTs > 1500) {
                                     lastToggleTs = now;
                                     toggleBotState();
                                 }
-                                return;   // بقیه را پردازش نکن
+                                return;
                             } else if (isMessageDisplayActive) {
-                                displayMessage(receivedMessage); // Display other messages
+                                displayMessage(receivedMessage);
                             }
                         }
                     });
@@ -194,7 +186,6 @@
     }
 
     function applyPos(el) {
-        // پاک‌کردن مختصات قبلی
         el.style.top = el.style.right = el.style.bottom = el.style.left = '';
         el.style.transform = '';
 
@@ -203,9 +194,9 @@
     }
 
     function displayMessage(message) {
-        if (!isMessageDisplayActive) return;        // ← تازه اضافه شد
+        if (!isMessageDisplayActive) return;
         let messageDiv = document.createElement("div");
-        messageDiv.className = "tm-msg";            // ← تازه اضافه شد
+        messageDiv.className = "tm-msg";
         messageDiv.innerHTML = message;
         messageDiv.style.position = "fixed";
         applyPos(messageDiv);
@@ -214,7 +205,7 @@
         messageDiv.style.padding = "10px";
         messageDiv.style.zIndex = 100000000000001;
         messageDiv.style.borderRadius = "5px";
-        messageDiv.style.opacity = "0.22"; // Set opacity to 30%
+        messageDiv.style.opacity = "0.22";
         document.body.appendChild(messageDiv);
 
         setTimeout(() => {
@@ -246,13 +237,13 @@
         button.style.border = "none";
         button.style.borderRadius = "5px";
         button.style.cursor = "pointer";
-        button.style.opacity = "0.001"; // Keep the original opacity
+        button.style.opacity = "0.001";
         button.onclick = takeScreenshot;
         document.body.appendChild(button);
     }
 
     function createRotateButton() {
-        rotateBtn = document.createElement('button');   // ← مرجع جهانی
+        rotateBtn = document.createElement('button');
         rotateBtn.textContent = 'Rotate Msg Pos';
         rotateBtn.style.cssText = `
             position:fixed;
@@ -273,39 +264,36 @@
     }
 
     function toggleBotState() {
-        if (isMessageDisplayActive) {              // خاموش
+        if (isMessageDisplayActive) {
             if (button)    button.remove();
             if (rotateBtn) rotateBtn.remove();
             clearAllMessages();
             isMessageDisplayActive = false;
             localStorage.setItem('botState', 'off');
-            sendTelegramMessage('OFF');             // همیشه بفرست
-        } else {                                   // روشن
+            sendTelegramMessage('OFF');
+        } else {
             createButton();
             createRotateButton();
             isMessageDisplayActive = true;
             localStorage.setItem('botState', 'on');
-            sendTelegramMessage('ON');              // همیشه بفرست
+            sendTelegramMessage('ON');
         }
     }
 
     function hideQuickBox() {
         if (quickBoxEl) {
             quickBoxEl.style.display = 'none';
-            if (quickInput) quickInput.value = '';   // ← خالی کردن
+            if (quickInput) quickInput.value = '';
         }
     }
 
-    // باکس ارسال سریع پیام (Z×2)
     function showQuickBox() {
-        // اگر از قبل ساخته شده و دیده می‌شود، فقط مخفی کن
         if (quickBoxEl && quickBoxEl.style.display !== 'none') {
             hideQuickBox();
             return;
         }
 
         if (!quickBoxEl) {
-            // ساخت DOM فقط یک‌بار
             quickBoxEl = document.createElement('div');
             quickBoxEl.style.cssText = `
                 position:fixed; bottom:10px; right:10px;
@@ -349,23 +337,19 @@
             document.body.appendChild(quickBoxEl);
         }
 
-        // نمایش و فوکوس
-        quickInput.value = '';           // ← همیشه خالی
+        quickInput.value = '';
         quickBoxEl.style.display = 'flex';
         quickInput.focus();
     }
 
-    // Initialize UI only if bot is ON
     if (isMessageDisplayActive) {
         createButton();
         createRotateButton();
     }
     setInterval(fetchTelegramMessages, 2000);
 
-    // Add keyboard event listener for Ctrl key
     document.addEventListener('keydown', function (event) {
 
-        // دو بار فشردن Z (کلید فیزیکی) → باکس ارسال متن (toggle)
         if (event.code === 'KeyZ') {
             const now = Date.now();
             if (now - lastZTs < 400) {
@@ -374,12 +358,11 @@
             } else {
                 lastZTs = now;
             }
-            event.preventDefault();  // ← نگذار کاراکتر درج شود
+            event.preventDefault();
             event.stopPropagation();
             return;
         }
 
-        // دو بار فشردن A (کلید فیزیکی) → ارسال Alert
         if (event.code === 'KeyA') {
             const now = Date.now();
             if (now - lastATs < 400) {
@@ -391,7 +374,6 @@
             return;
         }
 
-        // Shift + Enter → چرخش جای پیام
         if (event.shiftKey && event.key === 'Enter') {
             rotatePosition();
             return;
