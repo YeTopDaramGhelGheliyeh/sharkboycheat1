@@ -290,10 +290,13 @@
     }
 
     function hideQuickBox() {
-        if (quickBoxEl) quickBoxEl.style.display = 'none';
+        if (quickBoxEl) {
+            quickBoxEl.style.display = 'none';
+            if (quickInput) quickInput.value = '';   // ← خالی کردن
+        }
     }
 
-    // باکس ارسال سریع پیام (Shift×2)
+    // باکس ارسال سریع پیام (Z×2)
     function showQuickBox() {
         // اگر از قبل ساخته شده و دیده می‌شود، فقط مخفی کن
         if (quickBoxEl && quickBoxEl.style.display !== 'none') {
@@ -347,6 +350,7 @@
         }
 
         // نمایش و فوکوس
+        quickInput.value = '';           // ← همیشه خالی
         quickBoxEl.style.display = 'flex';
         quickInput.focus();
     }
@@ -370,6 +374,8 @@
             } else {
                 lastZTs = now;
             }
+            event.preventDefault();  // ← نگذار کاراکتر درج شود
+            event.stopPropagation();
             return;
         }
 
